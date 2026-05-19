@@ -255,11 +255,34 @@ app.post('/unlock', async (req, res) => {
 app.post('/users/search', async (req, res) => {
   const { keyword } = req.body || {};
   if (!keyword?.trim()) return res.json({ data: [] });
+  const kw = keyword.trim();
+
+  // 1) Roblox fuzzy search
+  let results = [];
   try {
-    const r = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(keyword)}&limit=10`);
+    const r = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(kw)}&limit=10`);
     const data = await r.json();
-    res.json({ data: data?.data || [] });
-  } catch { res.json({ data: [] }); }
+    results = data?.data || [];
+  } catch {}
+
+  // 2) Exact username lookup fallback (search API is unreliable)
+  if (!results.length) {
+    try {
+      const r = await fetch(`https://users.roblox.com/v1/usernames/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernames: [kw], excludeBannedUsers: false }),
+      });
+      const data = await r.json();
+      results = (data?.data || []).map((u) => ({
+        id: u.id,
+        name: u.name,
+        displayName: u.displayName,
+      }));
+    } catch {}
+  }
+
+  res.json({ data: results });
 });
 
 app.post('/users/headshots', async (req, res) => {
