@@ -1,7 +1,6 @@
 {
   "name": "roblox-clone-backend",
-  "version": "1.0.0",
-  "description": "Backend service for the Roblox clone (admin panel, access keys, Roblox API proxy)",
+  "version": "1.1.0",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -11,6 +10,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "discord.js": "^14.16.3"
   }
 }
