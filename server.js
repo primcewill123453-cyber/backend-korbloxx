@@ -44,6 +44,11 @@ const Store = {
     s.keys = s.keys.filter((k) => k.code !== code);
     save(s);
   },
+  clearKeys() {
+    const s = load();
+    s.keys = [];
+    save(s);
+  },
   setKeyPaused(code, paused) {
     const s = load();
     const key = s.keys.find((k) => k.code.toLowerCase() === code.toLowerCase());
@@ -125,7 +130,6 @@ async function lookupDiscordUser(rawUsername) {
 
   let member = null;
 
-  // 1) Discord server-side search API (handles partial usernames)
   try {
     const results = await guild.members.search({ query: q, limit: 10 });
     member = results.find((m) => {
@@ -140,7 +144,6 @@ async function lookupDiscordUser(rawUsername) {
     console.error('members.search failed:', e?.message || e);
   }
 
-  // 2) Fallback: full cache lookup
   if (!member) {
     try {
       await guild.members.fetch({ withPresences: true });
@@ -256,16 +259,12 @@ app.post('/users/search', async (req, res) => {
   const { keyword } = req.body || {};
   if (!keyword?.trim()) return res.json({ data: [] });
   const kw = keyword.trim();
-
-  // 1) Roblox fuzzy search
   let results = [];
   try {
     const r = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(kw)}&limit=10`);
     const data = await r.json();
     results = data?.data || [];
   } catch {}
-
-  // 2) Exact username lookup fallback (search API is unreliable)
   if (!results.length) {
     try {
       const r = await fetch(`https://users.roblox.com/v1/usernames/users`, {
@@ -274,14 +273,9 @@ app.post('/users/search', async (req, res) => {
         body: JSON.stringify({ usernames: [kw], excludeBannedUsers: false }),
       });
       const data = await r.json();
-      results = (data?.data || []).map((u) => ({
-        id: u.id,
-        name: u.name,
-        displayName: u.displayName,
-      }));
+      results = (data?.data || []).map((u) => ({ id: u.id, name: u.name, displayName: u.displayName }));
     } catch {}
   }
-
   res.json({ data: results });
 });
 
@@ -307,6 +301,11 @@ app.post('/admin/keys', (req, res) => {
 
 app.delete('/admin/keys/:code', (req, res) => {
   Store.deleteKey(req.params.code);
+  res.json({ ok: true });
+});
+
+app.post('/admin/clear-keys', (_req, res) => {
+  Store.clearKeys();
   res.json({ ok: true });
 });
 
