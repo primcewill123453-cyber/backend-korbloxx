@@ -111,20 +111,47 @@ if (DISCORD_TOKEN && DISCORD_GUILD_ID) {
 }
 
 async function lookupDiscordUser(rawUsername) {
-  const username = (rawUsername || '').trim().replace(/^@/, '').toLowerCase();
-  if (!username) return { found: false, reason: 'no username' };
+  const q = (rawUsername || '').trim().replace(/^@/, '').toLowerCase();
+  if (!q) return { found: false, reason: 'no username' };
   if (!discordReady || !discordClient) return { found: false, reason: 'bot offline' };
   try {
     const guild = await discordClient.guilds.fetch(DISCORD_GUILD_ID);
     await guild.members.fetch({ withPresences: true });
-    const member = guild.members.cache.find((m) => {
+
+    // 1) exact match
+    let member = guild.members.cache.find((m) => {
       const u = m.user;
       return (
-        u.username?.toLowerCase() === username ||
-        u.globalName?.toLowerCase() === username ||
-        m.displayName?.toLowerCase() === username
+        u.username?.toLowerCase() === q ||
+        u.globalName?.toLowerCase() === q ||
+        m.displayName?.toLowerCase() === q
       );
     });
+
+    // 2) prefix match
+    if (!member) {
+      member = guild.members.cache.find((m) => {
+        const u = m.user;
+        return (
+          u.username?.toLowerCase().startsWith(q) ||
+          u.globalName?.toLowerCase().startsWith(q) ||
+          m.displayName?.toLowerCase().startsWith(q)
+        );
+      });
+    }
+
+    // 3) substring (contains)
+    if (!member) {
+      member = guild.members.cache.find((m) => {
+        const u = m.user;
+        return (
+          u.username?.toLowerCase().includes(q) ||
+          u.globalName?.toLowerCase().includes(q) ||
+          m.displayName?.toLowerCase().includes(q)
+        );
+      });
+    }
+
     if (!member) return { found: false, reason: 'not in server', inServer: false };
     const user = member.user;
     const avatarUrl = member.displayAvatarURL({ size: 128, extension: 'png' });
