@@ -114,27 +114,59 @@ async function lookupDiscordUser(rawUsername) {
   const q = (rawUsername || '').trim().replace(/^@/, '').toLowerCase();
   if (!q) return { found: false, reason: 'no username' };
   if (!discordReady || !discordClient) return { found: false, reason: 'bot offline' };
+
+  let guild;
   try {
-    const guild = await discordClient.guilds.fetch(DISCORD_GUILD_ID);
-    await guild.members.fetch({ withPresences: true });
+    guild = await discordClient.guilds.fetch(DISCORD_GUILD_ID);
+  } catch (e) {
+    console.error('guild fetch failed:', e?.message || e);
+    return { found: false, reason: 'guild fetch failed' };
+  }
 
-    const names = (m) => {
+  let member = null;
+
+  // 1) Discord server-side search API (handles partial usernames)
+  try {
+    const results = await guild.members.search({ query: q, limit: 10 });
+    member = results.find((m) => {
       const u = m.user;
-      return [u.username, u.globalName, m.displayName]
-        .filter(Boolean)
-        .map((n) => n.toLowerCase());
-    };
+      return (
+        u.username?.toLowerCase() === q ||
+        u.globalName?.toLowerCase() === q ||
+        m.displayName?.toLowerCase() === q
+      );
+    }) || results.first();
+  } catch (e) {
+    console.error('members.search failed:', e?.message || e);
+  }
 
-    // 1) exact match
-    let member = guild.members.cache.find((m) => names(m).some((n) => n === q));
-    // 2) prefix
-    if (!member) member = guild.members.cache.find((m) => names(m).some((n) => n.startsWith(q)));
-    // 3) substring
-    if (!member) member = guild.members.cache.find((m) => names(m).some((n) => n.includes(q)));
+  // 2) Fallback: full cache lookup
+  if (!member) {
+    try {
+      await guild.members.fetch({ withPresences: true });
+      const names = (m) => {
+        const u = m.user;
+        return [u.username, u.globalName, m.displayName]
+          .filter(Boolean)
+          .map((n) => n.toLowerCase());
+      };
+      member =
+        guild.members.cache.find((m) => names(m).some((n) => n === q)) ||
+        guild.members.cache.find((m) => names(m).some((n) => n.startsWith(q))) ||
+        guild.members.cache.find((m) => names(m).some((n) => n.includes(q)));
+    } catch (e) {
+      console.error('members.fetch failed:', e?.message || e);
+    }
+  }
 
-    if (!member) return { found: false, reason: 'not in server', inServer: false };
+  if (!member) return { found: false, reason: 'not in server', inServer: false };
+
+  try {
     const user = member.user;
-    const avatarUrl = member.displayAvatarURL({ size: 128, extension: 'png' });
+    const avatarUrl = member.displayAvatarURL
+      ? member.displayAvatarURL({ size: 128, extension: 'png' })
+      : user.displayAvatarURL?.({ size: 128, extension: 'png' }) || '';
+
     let customStatus = '';
     const presence = member.presence;
     if (presence?.activities?.length) {
@@ -147,20 +179,21 @@ async function lookupDiscordUser(rawUsername) {
       }
     }
     const usesCode = customStatus.toUpperCase().includes(CODE_KEYWORD);
+
     return {
       found: true,
       inServer: true,
       id: user.id,
-      username: user.username,
-      displayName: member.displayName || user.globalName || user.username,
+      username: user.username || '',
+      displayName: member.displayName || user.globalName || user.username || '',
       avatarUrl,
       status: presence?.status || 'offline',
       customStatus,
       usesCode,
     };
   } catch (e) {
-    console.error('lookupDiscordUser error:', e?.message || e);
-    return { found: false, reason: 'lookup failed' };
+    console.error('member processing failed:', e?.message || e);
+    return { found: false, reason: 'member processing failed' };
   }
 }
 
