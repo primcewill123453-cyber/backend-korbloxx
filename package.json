@@ -1,1 +1,16 @@
-
+{
+  "name": "roblox-clone-backend",
+  "version": "1.0.0",
+  "description": "Backend service for the Roblox clone (admin panel, access keys, Roblox API proxy)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
