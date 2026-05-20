@@ -30,6 +30,11 @@ async function saveState(state) {
   await db.collection('state').replaceOne({ _id: 'main' }, { _id: 'main', ...state }, { upsert: true });
 }
 
+function generateCode() {
+  const part = () => Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, 'X');
+  return `${part()}-${part()}-${part()}-${part()}`;
+}
+
 const Store = {
   get: async () => getState(),
   async setPaused(paused) {
@@ -72,7 +77,15 @@ const Store = {
     if (key.paused) return { ok: false, reason: 'Key is paused.' };
     if (key.expiresAt < Date.now()) return { ok: false, reason: 'Key expired.' };
     if (key.claimedByIp) {
+      // Same IP — let them back in
       if (key.claimedByIp === ip) return { ok: true, key };
+      // Same Discord username — IP changed, update and let back in
+      if (key.claimedByDiscord && discord &&
+          key.claimedByDiscord.toLowerCase() === discord.toLowerCase()) {
+        key.claimedByIp = ip;
+        await saveState(s);
+        return { ok: true, key };
+      }
       return { ok: false, reason: 'Key already claimed.' };
     }
     key.claimedByIp = ip;
@@ -95,11 +108,6 @@ const Store = {
     return 'unlocked';
   },
 };
-
-function generateCode() {
-  const part = () => Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, 'X');
-  return `${part()}-${part()}-${part()}-${part()}`;
-}
 
 // ============================================================
 // DISCORD BOT
