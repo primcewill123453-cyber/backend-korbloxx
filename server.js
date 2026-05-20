@@ -77,9 +77,7 @@ const Store = {
     if (key.paused) return { ok: false, reason: 'Key is paused.' };
     if (key.expiresAt < Date.now()) return { ok: false, reason: 'Key expired.' };
     if (key.claimedByIp) {
-      // Same IP — let them back in
       if (key.claimedByIp === ip) return { ok: true, key };
-      // Same Discord username — IP changed, update and let back in
       if (key.claimedByDiscord && discord &&
           key.claimedByDiscord.toLowerCase() === discord.toLowerCase()) {
         key.claimedByIp = ip;
@@ -194,6 +192,16 @@ app.get('/status', async (_req, res) => {
 
 app.get('/check', async (req, res) => {
   res.json({ unlocked: await Store.isIpUnlocked(getIp(req)), status: await Store.ipKeyStatus(getIp(req)) });
+});
+
+app.get('/check-code', async (req, res) => {
+  const code = (req.query.code || '').toString();
+  const s = await Store.get();
+  const key = s.keys.find((k) => k.code.toLowerCase() === code.toLowerCase());
+  if (!key) return res.json({ valid: false, reason: 'deleted' });
+  if (key.paused) return res.json({ valid: false, reason: 'paused' });
+  if (key.expiresAt < Date.now()) return res.json({ valid: false, reason: 'expired' });
+  res.json({ valid: true });
 });
 
 app.get('/discord/lookup', async (req, res) => {
