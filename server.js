@@ -2,9 +2,6 @@ import express from 'express';
 import { MongoClient } from 'mongodb';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
 
-// ============================================================
-// MONGODB STORE
-// ============================================================
 const MONGODB_URL = process.env.MONGODB_URL || 'mongodb+srv://Prince:princewill@cluster0.ybmwcbx.mongodb.net/roblox-clone?appName=Cluster0';
 let db = null;
 
@@ -38,36 +35,29 @@ function generateCode() {
 const Store = {
   get: async () => getState(),
   async setPaused(paused) {
-    const s = await getState();
-    s.paused = paused;
-    await saveState(s);
+    const s = await getState(); s.paused = paused; await saveState(s);
   },
   async createKey(durationMs) {
     const s = await getState();
-    const key = {
-      code: generateCode(),
-      createdAt: Date.now(),
-      expiresAt: durationMs === Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : Date.now() + durationMs,
-      paused: false,
-    };
-    s.keys.unshift(key);
-    await saveState(s);
-    return key;
+    const key = { code: generateCode(), createdAt: Date.now(), expiresAt: durationMs === Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : Date.now() + durationMs, paused: false, note: '' };
+    s.keys.unshift(key); await saveState(s); return key;
   },
   async deleteKey(code) {
-    const s = await getState();
-    s.keys = s.keys.filter((k) => k.code !== code);
-    await saveState(s);
+    const s = await getState(); s.keys = s.keys.filter((k) => k.code !== code); await saveState(s);
   },
   async clearKeys() {
-    const s = await getState();
-    s.keys = [];
-    await saveState(s);
+    const s = await getState(); s.keys = []; await saveState(s);
   },
   async setKeyPaused(code, paused) {
     const s = await getState();
     const key = s.keys.find((k) => k.code.toLowerCase() === code.toLowerCase());
     if (key) { key.paused = paused; await saveState(s); }
+    return { ok: !!key };
+  },
+  async setKeyNote(code, note) {
+    const s = await getState();
+    const key = s.keys.find((k) => k.code.toLowerCase() === code.toLowerCase());
+    if (key) { key.note = note || ''; await saveState(s); }
     return { ok: !!key };
   },
   async claimKey(code, ip, discord, discordInfo) {
@@ -78,20 +68,13 @@ const Store = {
     if (key.expiresAt < Date.now()) return { ok: false, reason: 'Key expired.' };
     if (key.claimedByIp) {
       if (key.claimedByIp === ip) return { ok: true, key };
-      if (key.claimedByDiscord && discord &&
-          key.claimedByDiscord.toLowerCase() === discord.toLowerCase()) {
-        key.claimedByIp = ip;
-        await saveState(s);
-        return { ok: true, key };
+      if (key.claimedByDiscord && discord && key.claimedByDiscord.toLowerCase() === discord.toLowerCase()) {
+        key.claimedByIp = ip; await saveState(s); return { ok: true, key };
       }
       return { ok: false, reason: 'Key already claimed.' };
     }
-    key.claimedByIp = ip;
-    key.claimedByDiscord = discord;
-    key.discordInfo = discordInfo || null;
-    key.claimedAt = Date.now();
-    await saveState(s);
-    return { ok: true, key };
+    key.claimedByIp = ip; key.claimedByDiscord = discord; key.discordInfo = discordInfo || null; key.claimedAt = Date.now();
+    await saveState(s); return { ok: true, key };
   },
   async isIpUnlocked(ip) {
     const s = await getState();
@@ -107,13 +90,9 @@ const Store = {
   },
 };
 
-// ============================================================
-// DISCORD BOT
-// ============================================================
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 const CODE_KEYWORD = (process.env.DISCORD_CODE_KEYWORD || 'PRX').toUpperCase();
-
 let discordReady = false;
 let discordClient = null;
 
@@ -132,7 +111,7 @@ async function lookupDiscordUser(rawUsername) {
   if (!q) return { found: false, reason: 'no username' };
   if (!discordReady || !discordClient) return { found: false, reason: 'bot offline' };
   let guild;
-  try { guild = await discordClient.guilds.fetch(DISCORD_GUILD_ID); } catch (e) { return { found: false, reason: 'guild fetch failed' }; }
+  try { guild = await discordClient.guilds.fetch(DISCORD_GUILD_ID); } catch { return { found: false, reason: 'guild fetch failed' }; }
   let member = null;
   try {
     const results = await guild.members.search({ query: q, limit: 10 });
@@ -161,12 +140,9 @@ async function lookupDiscordUser(rawUsername) {
       customStatus = custom?.state || presence.activities[0]?.state || presence.activities[0]?.name || '';
     }
     return { found: true, inServer: true, id: user.id, username: user.username || '', displayName: member.displayName || user.globalName || user.username || '', avatarUrl, status: presence?.status || 'offline', customStatus, usesCode: customStatus.toUpperCase().includes(CODE_KEYWORD) };
-  } catch (e) { return { found: false, reason: 'member processing failed' }; }
+  } catch { return { found: false, reason: 'member processing failed' }; }
 }
 
-// ============================================================
-// SERVER
-// ============================================================
 const app = express();
 app.use(express.json());
 app.use((req, res, next) => {
@@ -252,22 +228,23 @@ app.post('/admin/keys', async (req, res) => {
 });
 
 app.delete('/admin/keys/:code', async (req, res) => {
-  await Store.deleteKey(req.params.code);
-  res.json({ ok: true });
+  await Store.deleteKey(req.params.code); res.json({ ok: true });
 });
 
 app.post('/admin/clear-keys', async (_req, res) => {
-  await Store.clearKeys();
-  res.json({ ok: true });
+  await Store.clearKeys(); res.json({ ok: true });
 });
 
 app.post('/admin/keys/:code/pause', async (req, res) => {
   res.json(await Store.setKeyPaused(req.params.code, !!req.body?.paused));
 });
 
+app.post('/admin/keys/:code/note', async (req, res) => {
+  res.json(await Store.setKeyNote(req.params.code, req.body?.note || ''));
+});
+
 app.post('/admin/pause', async (req, res) => {
-  await Store.setPaused(!!req.body?.paused);
-  res.json({ ok: true });
+  await Store.setPaused(!!req.body?.paused); res.json({ ok: true });
 });
 
 app.post('/admin/refresh-discord', async (_req, res) => {
@@ -278,8 +255,7 @@ app.post('/admin/refresh-discord', async (_req, res) => {
       if (info.found) k.discordInfo = info;
     }
   }
-  await saveState(s);
-  res.json({ ok: true, keys: s.keys });
+  await saveState(s); res.json({ ok: true, keys: s.keys });
 });
 
 const port = process.env.PORT || 3000;
